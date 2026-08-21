@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Holdings Approval Generator</title>
+    <style>
+        body { font-family: sans-serif; margin: 2rem; }
+        .form-group { margin-bottom: 1rem; }
+        label { display: block; font-weight: bold; margin-bottom: .25rem; }
+        input[type="text"], input[type="number"], input[type="date"], select {
+            width: 100%; max-width: 400px; padding: .5rem;
+        }
+        .btn { padding: .5rem 1rem; cursor: pointer; }
+        .btn-primary { background-color: #007bff; color: white; border: none; }
+        .flex { display: flex; align-items: center; gap: .5rem; }
+    </style>
+</head>
+<body>
+    <h1>Holdings Approval Generator</h1>
+    <form action="/generate" method="post">
+
+        <div class="form-group">
+            <label for="template_type">Template Type</label>
+            <select name="template_type" id="template_type" required>
+                <option value="102_options_shares">102 trustee - options & shares</option>
+                <option value="102_shares">102 trustee - Shares</option>
+                <option value="103K_shares">103K - Shares</option>
+                <option value="104B_shares">104B - Shares</option>
+                <option value="104H_shares">104H - Shares</option>
+                <option value="15C_shares">15C - Shares</option>
+                <option value="3i_shares">3i - Shares</option>
+                <option value="shareholder">Shareholder</option>
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label>Language</label>
+            <div class="flex">
+                <input type="radio" id="lang_he" name="language" value="he" checked>
+                <label for="lang_he" style="font-weight: normal; margin:0">Hebrew (Default)</label>
+                <input type="radio" id="lang_en" name="language" value="en">
+                <label for="lang_en" style="font-weight: normal; margin:0">English</label>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label for="company_name">Company Name</label>
+            <input type="text" id="company_name" name="company_name" required>
+        </div>
+
+        <div class="form-group">
+            <label for="shareholder_name">Shareholder Name</label>
+            <input type="text" id="shareholder_name" name="shareholder_name" required>
+        </div>
+
+        <div class="form-group">
+            <label for="id_number">ID Number</label>
+            <input type="text" id="id_number" name="id_number" required>
+        </div>
+
+        <div class="form-group">
+            <label for="today_date">Today's Date</label>
+            <input type="date" id="today_date" name="today_date" required>
+        </div>
+
+        <div class="form-group">
+            <label for="holding_date">Date of Holding</label>
+            <div class="flex">
+                <input type="date" id="holding_date" name="holding_date" required>
+                <button type="button" class="btn" onclick="setLastDayOfYear()">Last Day of Year</button>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label for="number_of_shares">Number of Shares</label>
+            <input type="number" id="number_of_shares" name="number_of_shares">
+        </div>
+
+        <div class="form-group">
+            <label for="total_options">Total Number of Options</label>
+            <input type="number" id="total_options" name="total_options">
+        </div>
+
+        <div class="form-group">
+            <label for="vested_options">Vested Options</label>
+            <input type="number" id="vested_options" name="vested_options">
+        </div>
+
+        <div class="form-group">
+            <label for="unvested_options">Unvested Options</label>
+            <input type="number" id="unvested_options" name="unvested_options">
+        </div>
+
+        <button type="submit" class="btn btn-primary">Generate Holdings Approval</button>
+    </form>
+
+    <script>
+        // Set today's date
+        document.getElementById('today_date').valueAsDate = new Date();
+
+        function setLastDayOfYear() {
+            const currentYear = new Date().getFullYear();
+            // YYYY-MM-DD
+            document.getElementById('holding_date').value = currentYear + "-12-31";
+        }
+    </script>
+</body>
+</html>
