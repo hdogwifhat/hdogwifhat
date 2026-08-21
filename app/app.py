@@ -1,11 +1,11 @@
 import os
 import subprocess
+from datetime import datetime
 from flask import Flask, request, send_file, render_template
 import docx
 
 app = Flask(__name__)
 
-# Template mapping
 TEMPLATES = {
     "102_options_shares": {
         "en": "Holding Approval - 102 trustee - options & shares.docx",
@@ -33,7 +33,7 @@ TEMPLATES = {
     },
     "3i_shares": {
         "en": "Holding Approval - 3i - Shares.docx",
-        "he": "Holding Approval - 3i - Shares.docx" # No explicit hebrew file for 3i? Let's assume EN for both or check later
+        "he": "Holding Approval - 3i - Shares.docx"
     },
     "shareholder": {
         "en": "Holding Approval - Shareholder.docx",
@@ -41,21 +41,77 @@ TEMPLATES = {
     }
 }
 
+HEBREW_MONTHS = {
+    1: 'בינואר', 2: 'בפברואר', 3: 'במרץ', 4: 'באפריל', 5: 'במאי', 6: 'ביוני',
+    7: 'ביולי', 8: 'באוגוסט', 9: 'בספטמבר', 10: 'באוקטובר', 11: 'בנובמבר', 12: 'בדצמבר'
+}
+
+def format_today_date(date_str):
+    if not date_str: return ""
+    try:
+        d = datetime.strptime(date_str, '%Y-%m-%d')
+        return d.strftime('%d/%m/%y')
+    except: return date_str
+
+def format_holding_date_hebrew(date_str):
+    if not date_str: return ""
+    try:
+        d = datetime.strptime(date_str, '%Y-%m-%d')
+        return f"ה-{d.day} {HEBREW_MONTHS[d.month]} {d.year}"
+    except: return date_str
+
 @app.route("/")
 def index():
     return render_template("index.html")
 
-def replace_text_in_paragraphs(paragraphs, replacements):
-    for p in paragraphs:
-        for run in p.runs:
-            for key, val in replacements.items():
-                if key in run.text:
-                    run.text = run.text.replace(key, str(val))
+def advanced_replace(paragraphs, replacements, bold_keys):
+    # Sort replacements by length descending so longer phrases match first
+    sorted_reps = sorted(replacements.items(), key=lambda x: len(x[0]), reverse=True)
 
-        for key, val in replacements.items():
+    for p in paragraphs:
+        needs_replace = False
+        for key in replacements.keys():
             if key in p.text:
-                text = p.text
-                p.text = text.replace(key, str(val))
+                needs_replace = True
+                break
+
+        if needs_replace:
+            alignment = p.alignment
+
+            text = p.text
+            for k, v in sorted_reps:
+                if k not in bold_keys:
+                    text = text.replace(k, str(v))
+
+            if any(k in text for k in bold_keys):
+                p.clear()
+
+                def rebuild_p(current_text, current_p):
+                    first_key = None
+                    first_idx = len(current_text)
+                    for k in bold_keys:
+                        idx = current_text.find(k)
+                        if idx != -1 and idx < first_idx:
+                            first_key = k
+                            first_idx = idx
+
+                    if first_key:
+                        parts = current_text.split(first_key, 1)
+                        if parts[0]:
+                            current_p.add_run(parts[0])
+                        run = current_p.add_run(str(replacements[first_key]))
+                        run.bold = True
+                        rebuild_p(parts[1], current_p)
+                    else:
+                        if current_text:
+                            current_p.add_run(current_text)
+
+                rebuild_p(text, p)
+            else:
+                p.text = text
+
+            if alignment is not None:
+                p.alignment = alignment
 
 @app.route("/generate", methods=["POST"])
 def generate():
@@ -65,12 +121,17 @@ def generate():
     company_name = request.form.get("company_name", "")
     shareholder_name = request.form.get("shareholder_name", "")
     id_number = request.form.get("id_number", "")
-    today_date = request.form.get("today_date", "")
-    holding_date = request.form.get("holding_date", "")
+    today_date_raw = request.form.get("today_date", "")
+    holding_date_raw = request.form.get("holding_date", "")
+
     number_of_shares = request.form.get("number_of_shares", "")
     total_options = request.form.get("total_options", "")
     vested_options = request.form.get("vested_options", "")
     unvested_options = request.form.get("unvested_options", "")
+
+    today_date_formatted = format_today_date(today_date_raw)
+
+    bold_keys = []
 
     if language == "en":
         replacements = {
@@ -78,7 +139,7 @@ def generate():
             "[company’s name]": company_name,
             "[Name of Shareholder]": shareholder_name,
             "[ID number]": id_number,
-            "[DD MM, YYYY]": today_date,
+            "[DD MM, YYYY]": today_date_formatted,
             "[Number of Shares]": number_of_shares,
             "[Total Number of options]": total_options,
             "[Vested options]": vested_options,
@@ -86,11 +147,13 @@ def generate():
             "[New Version]": "",
             "[Ordinary]": "Ordinary",
             "[Sir/Madam]": "Sir/Madam",
-            "August 21, 2026": today_date,
-            "July 29, 2026": today_date,
-            "as of the date of this letter": f"as of {holding_date}" if holding_date else "as of the date of this letter"
+            "August 21, 2026": today_date_formatted,
+            "July 29, 2026": today_date_formatted,
+            "as of the date of this letter": f"as of {holding_date_raw}" if holding_date_raw else "as of the date of this letter"
         }
     else:
+        holding_date_heb = format_holding_date_hebrew(holding_date_raw)
+
         replacements = {
             "[שם החברה]": company_name,
             "[שם הניצע\\ת]": shareholder_name,
@@ -99,30 +162,52 @@ def generate():
             "[תעודת זהות \\ ח\"פ]": id_number,
             "[מס' זהות/ דרכון]": id_number,
             "[מס' ת.ז.]": id_number,
-            "[DD בMM, YYYY]": today_date,
-            "[מספר המניות]": number_of_shares,
-            "[כמות מניות]": number_of_shares,
-            "[סך הכול אופציות]": total_options,
-            "[אופציות מובשלות]": vested_options,
-            "[אופציות לא מובשלות]": unvested_options,
+            "[DD בMM, YYYY]": today_date_formatted,
             "[נא לעדכן בהתאם לאדון/גברת]": "",
             "[נוסח חדש]": "",
-            "[רגילות]": "רגילות",
-            "21 August 2026": today_date,
-            "29 יולי 2026": today_date,
-            "‏29 יולי 2026": today_date,
-            "‏‏29 יולי 2026": today_date,
+            "21 August 2026": today_date_formatted,
+            "29 יולי 2026": today_date_formatted,
+            "‏29 יולי 2026": today_date_formatted,
+            "‏‏29 יולי 2026": today_date_formatted,
             "יצחק וייס": shareholder_name,
             "014875538": id_number,
             "Kanabo Group PLC": company_name,
-            "נכון למועד מכתב זה": f"נכון למועד {holding_date}" if holding_date else "נכון למועד מכתב זה"
+            "נכון למועד מכתב זה": f"נכון למועד {holding_date_heb}" if holding_date_raw else "נכון למועד מכתב זה",
+
+            # These are the ones that should be bolded, capturing variations of spacing in templates
+            "[מספר המניות] מניות [רגילות]": f"{number_of_shares} מניות רגילות",
+            "[מספר המניות] מניות רגילות": f"{number_of_shares} מניות רגילות",
+            "[כמות מניות] מניות רגילות": f"{number_of_shares} מניות רגילות",
+            "[סך הכול אופציות] אופציות": f"{total_options} אופציות",
+            "[אופציות מובשלות] אופציות בשלות": f"{vested_options} אופציות בשלות",
+            "[אופציות מובשלות]  אופציות בשלות": f"{vested_options} אופציות בשלות",
+            "[אופציות לא מובשלות] אופציות שטרם הגיע מועד הבשלתן": f"{unvested_options} אופציות שטרם הגיע מועד הבשלתן",
+            "[אופציות לא מובשלות]  אופציות שטרם הגיע מועד הבשלתן": f"{unvested_options} אופציות שטרם הגיע מועד הבשלתן",
         }
+
+        # Fallbacks
+        replacements["[מספר המניות]"] = number_of_shares
+        replacements["[כמות מניות]"] = number_of_shares
+        replacements["[סך הכול אופציות]"] = total_options
+        replacements["[אופציות מובשלות]"] = vested_options
+        replacements["[אופציות לא מובשלות]"] = unvested_options
+        replacements["[רגילות]"] = "רגילות"
+
+        bold_keys = [
+            "[מספר המניות] מניות [רגילות]",
+            "[מספר המניות] מניות רגילות",
+            "[כמות מניות] מניות רגילות",
+            "[סך הכול אופציות] אופציות",
+            "[אופציות מובשלות] אופציות בשלות",
+            "[אופציות מובשלות]  אופציות בשלות",
+            "[אופציות לא מובשלות] אופציות שטרם הגיע מועד הבשלתן",
+            "[אופציות לא מובשלות]  אופציות שטרם הגיע מועד הבשלתן"
+        ]
 
     template_file = TEMPLATES.get(template_type, {}).get(language)
     if not template_file:
         return "Template not found", 404
 
-    # Using os.getcwd() to be sure
     base_dir = os.path.dirname(os.path.abspath(__file__))
     template_path = os.path.join(base_dir, "docx_templates", template_file)
 
@@ -130,11 +215,12 @@ def generate():
         return f"File {template_path} not found", 404
 
     doc = docx.Document(template_path)
-    replace_text_in_paragraphs(doc.paragraphs, replacements)
+
+    advanced_replace(doc.paragraphs, replacements, bold_keys)
     for table in doc.tables:
         for row in table.rows:
             for cell in row.cells:
-                replace_text_in_paragraphs(cell.paragraphs, replacements)
+                advanced_replace(cell.paragraphs, replacements, bold_keys)
 
     output_docx = f"/tmp/{template_type}_{language}.docx"
     doc.save(output_docx)
