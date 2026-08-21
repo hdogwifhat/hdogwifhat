@@ -1,7 +1,0 @@
-[2026-08-21 11:05:11 +0000] [82832] [INFO] Starting gunicorn 21.2.0
-[2026-08-21 11:05:11 +0000] [82832] [INFO] Listening at: http://0.0.0.0:5000 (82832)
-[2026-08-21 11:05:11 +0000] [82832] [INFO] Using worker: sync
-[2026-08-21 11:05:11 +0000] [82948] [INFO] Booting worker with pid: 82948
-[2026-08-21 11:05:14 +0000] [82948] [INFO] Worker exiting (pid: 82948)
-[2026-08-21 11:05:14 +0000] [82832] [INFO] Handling signal: term
-[2026-08-21 11:05:14 +0000] [82832] [INFO] Shutting down: Master

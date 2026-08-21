@@ -1,9 +1,0 @@
-[2026-08-21 11:42:37 +0000] [125536] [INFO] Starting gunicorn 21.2.0
-[2026-08-21 11:42:37 +0000] [125536] [INFO] Listening at: http://0.0.0.0:5000 (125536)
-[2026-08-21 11:42:37 +0000] [125536] [INFO] Using worker: sync
-[2026-08-21 11:42:37 +0000] [125652] [INFO] Booting worker with pid: 125652
-convert /tmp/102_options_shares_he.docx as a Writer document -> /tmp/102_options_shares_he.pdf using filter : writer_pdf_Export
-[2026-08-21 11:42:43 +0000] [125652] [INFO] Worker exiting (pid: 125652)
-[2026-08-21 11:42:43 +0000] [125536] [INFO] Handling signal: term
-[2026-08-21 11:42:43 +0000] [125536] [ERROR] Worker (pid:125652) was sent SIGTERM!
-[2026-08-21 11:42:44 +0000] [125536] [INFO] Shutting down: Master
