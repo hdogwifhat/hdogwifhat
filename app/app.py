@@ -3,7 +3,8 @@ import subprocess
 from datetime import datetime
 from flask import Flask, request, send_file, render_template
 import docx
-from docx.shared import Inches
+from docx.shared import Inches, Pt
+from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
 
 app = Flask(__name__)
 
@@ -73,7 +74,6 @@ def advanced_replace(paragraphs, replacements, bold_keys):
     sorted_reps = sorted(replacements.items(), key=lambda x: len(x[0]), reverse=True)
 
     for p in paragraphs:
-        # Instead of p.text which sometimes skips spaces, we use get_full_text
         text = get_full_text(p)
 
         needs_replace = False
@@ -83,14 +83,24 @@ def advanced_replace(paragraphs, replacements, bold_keys):
                 break
 
         if needs_replace:
+            # Save paragraph formatting
             alignment = p.alignment
             style = p.style
 
+            # First pass: replace non-bold text
             for k, v in sorted_reps:
                 if k not in bold_keys:
                     text = text.replace(k, str(v))
 
+            # Second pass: check if there are any bold keys left in the text
             if any(k in text for k in bold_keys):
+                # Retrieve the font size and name of the first run if possible
+                first_run_font_size = None
+                first_run_font_name = None
+                if p.runs:
+                    first_run_font_size = p.runs[0].font.size
+                    first_run_font_name = p.runs[0].font.name
+
                 p.clear()
 
                 def rebuild_p(current_text, current_p):
@@ -105,17 +115,32 @@ def advanced_replace(paragraphs, replacements, bold_keys):
                     if first_key:
                         parts = current_text.split(first_key, 1)
                         if parts[0]:
-                            current_p.add_run(parts[0])
-                        run = current_p.add_run(str(replacements[first_key]))
-                        run.bold = True
+                            run_normal = current_p.add_run(parts[0])
+                            run_normal.font.size = first_run_font_size
+                            run_normal.font.name = first_run_font_name
+
+                        run_bold = current_p.add_run(str(replacements[first_key]))
+                        run_bold.bold = True
+                        run_bold.font.size = first_run_font_size
+                        run_bold.font.name = first_run_font_name
+
                         rebuild_p(parts[1], current_p)
                     else:
                         if current_text:
-                            current_p.add_run(current_text)
+                            run_normal = current_p.add_run(current_text)
+                            run_normal.font.size = first_run_font_size
+                            run_normal.font.name = first_run_font_name
 
                 rebuild_p(text, p)
             else:
-                p.text = text
+                # If no bold keys were actually found, just restore text normally
+                # But keep it inside the run structure to not lose formatting
+                if p.runs:
+                    p.runs[0].text = text
+                    for run in p.runs[1:]:
+                        run.text = ""
+                else:
+                    p.add_run(text)
 
             if alignment is not None:
                 p.alignment = alignment
@@ -124,38 +149,20 @@ def insert_signature(doc, signature_path):
     if not os.path.exists(signature_path):
         return
 
-    for p in doc.paragraphs:
-        text = get_full_text(p).strip()
-        # Look for the signature blocks in Hebrew or English
-        if "אלטשר נאמנויות בע\"מ" in text or "Altshare Trusts Ltd." in text:
-            # We want to clear this text, add the image, and re-add the text below or alongside
-            # Let's insert before this paragraph
-            p.insert_paragraph_before("").add_run().add_picture(signature_path, width=Inches(1.5))
-            # Just do it for the last match (usually the signature line)
-            # break
-            # Wait, there might be mention of Altshare Trusts in the first paragraph.
-            # Usually the signature is at the very bottom. Let's just do it for the last paragraph that matches.
-
-    # Better approach: find all indices and insert at the last one.
-    target_idx = -1
+    last_company_mention = -1
     for i, p in enumerate(doc.paragraphs):
         text = get_full_text(p).strip()
-        if text == "אלטשר נאמנויות בע\"מ" or text == "Altshare Trusts Ltd." or text == "בברכה," or text == "Best regards,":
-            target_idx = i
+        # Look for the last line that matches the sign off
+        if text == "אלטשר נאמנויות בע\"מ" or text == "Altshare Trusts Ltd.":
+            last_company_mention = i
 
-    if target_idx != -1:
-        # insert image right before the last found text block
-        # Actually it's best to insert it right before the "Altshare Trusts Ltd." or "אלטשר נאמנויות בע"מ" line
-        last_company_mention = -1
-        for i, p in enumerate(doc.paragraphs):
-            text = get_full_text(p).strip()
-            if text == "אלטשר נאמנויות בע\"מ" or text == "Altshare Trusts Ltd.":
-                last_company_mention = i
-
-        if last_company_mention != -1:
-            p = doc.paragraphs[last_company_mention]
-            r = p.insert_paragraph_before("").add_run()
-            r.add_picture(signature_path, width=Inches(1.5))
+    if last_company_mention != -1:
+        # Insert a paragraph before the sign off for the image
+        p = doc.paragraphs[last_company_mention]
+        new_p = p.insert_paragraph_before("")
+        new_p.alignment = p.alignment if p.alignment is not None else WD_PARAGRAPH_ALIGNMENT.RIGHT # default to right for hebrew usually, or match p
+        r = new_p.add_run()
+        r.add_picture(signature_path, width=Inches(1.5))
 
 @app.route("/generate", methods=["POST"])
 def generate():
@@ -193,7 +200,7 @@ def generate():
 
             # English Bold Keys replacements
             "[Number of Shares] Company shares": f"{number_of_shares} Company shares",
-            "[Total Number of options]": f"{total_options} options", # Usually "amounts to [Total Number of options]"
+            "[Total Number of options]": f"{total_options} options",
             "[Vested options] options are vested": f"{vested_options} options are vested",
             "[Non Vested options] options have not yet reached their vesting date": f"{unvested_options} options have not yet reached their vesting date",
         }
