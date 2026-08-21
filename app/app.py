@@ -3,6 +3,7 @@ import subprocess
 from datetime import datetime
 from flask import Flask, request, send_file, render_template
 import docx
+from docx.shared import Inches
 
 app = Flask(__name__)
 
@@ -64,21 +65,27 @@ def format_holding_date_hebrew(date_str):
 def index():
     return render_template("index.html")
 
+def get_full_text(paragraph):
+    return "".join(run.text for run in paragraph.runs)
+
 def advanced_replace(paragraphs, replacements, bold_keys):
     # Sort replacements by length descending so longer phrases match first
     sorted_reps = sorted(replacements.items(), key=lambda x: len(x[0]), reverse=True)
 
     for p in paragraphs:
+        # Instead of p.text which sometimes skips spaces, we use get_full_text
+        text = get_full_text(p)
+
         needs_replace = False
         for key in replacements.keys():
-            if key in p.text:
+            if key in text:
                 needs_replace = True
                 break
 
         if needs_replace:
             alignment = p.alignment
+            style = p.style
 
-            text = p.text
             for k, v in sorted_reps:
                 if k not in bold_keys:
                     text = text.replace(k, str(v))
@@ -113,6 +120,43 @@ def advanced_replace(paragraphs, replacements, bold_keys):
             if alignment is not None:
                 p.alignment = alignment
 
+def insert_signature(doc, signature_path):
+    if not os.path.exists(signature_path):
+        return
+
+    for p in doc.paragraphs:
+        text = get_full_text(p).strip()
+        # Look for the signature blocks in Hebrew or English
+        if "אלטשר נאמנויות בע\"מ" in text or "Altshare Trusts Ltd." in text:
+            # We want to clear this text, add the image, and re-add the text below or alongside
+            # Let's insert before this paragraph
+            p.insert_paragraph_before("").add_run().add_picture(signature_path, width=Inches(1.5))
+            # Just do it for the last match (usually the signature line)
+            # break
+            # Wait, there might be mention of Altshare Trusts in the first paragraph.
+            # Usually the signature is at the very bottom. Let's just do it for the last paragraph that matches.
+
+    # Better approach: find all indices and insert at the last one.
+    target_idx = -1
+    for i, p in enumerate(doc.paragraphs):
+        text = get_full_text(p).strip()
+        if text == "אלטשר נאמנויות בע\"מ" or text == "Altshare Trusts Ltd." or text == "בברכה," or text == "Best regards,":
+            target_idx = i
+
+    if target_idx != -1:
+        # insert image right before the last found text block
+        # Actually it's best to insert it right before the "Altshare Trusts Ltd." or "אלטשר נאמנויות בע"מ" line
+        last_company_mention = -1
+        for i, p in enumerate(doc.paragraphs):
+            text = get_full_text(p).strip()
+            if text == "אלטשר נאמנויות בע\"מ" or text == "Altshare Trusts Ltd.":
+                last_company_mention = i
+
+        if last_company_mention != -1:
+            p = doc.paragraphs[last_company_mention]
+            r = p.insert_paragraph_before("").add_run()
+            r.add_picture(signature_path, width=Inches(1.5))
+
 @app.route("/generate", methods=["POST"])
 def generate():
     template_type = request.form.get("template_type")
@@ -140,17 +184,31 @@ def generate():
             "[Name of Shareholder]": shareholder_name,
             "[ID number]": id_number,
             "[DD MM, YYYY]": today_date_formatted,
-            "[Number of Shares]": number_of_shares,
-            "[Total Number of options]": total_options,
-            "[Vested options]": vested_options,
-            "[Non Vested options]": unvested_options,
             "[New Version]": "",
             "[Ordinary]": "Ordinary",
             "[Sir/Madam]": "Sir/Madam",
             "August 21, 2026": today_date_formatted,
             "July 29, 2026": today_date_formatted,
-            "as of the date of this letter": f"as of {holding_date_raw}" if holding_date_raw else "as of the date of this letter"
+            "as of the date of this letter": f"as of {holding_date_raw}" if holding_date_raw else "as of the date of this letter",
+
+            # English Bold Keys replacements
+            "[Number of Shares] Company shares": f"{number_of_shares} Company shares",
+            "[Total Number of options]": f"{total_options} options", # Usually "amounts to [Total Number of options]"
+            "[Vested options] options are vested": f"{vested_options} options are vested",
+            "[Non Vested options] options have not yet reached their vesting date": f"{unvested_options} options have not yet reached their vesting date",
         }
+
+        # English Fallbacks
+        replacements["[Number of Shares]"] = number_of_shares
+        replacements["[Vested options]"] = vested_options
+        replacements["[Non Vested options]"] = unvested_options
+
+        bold_keys = [
+            "[Number of Shares] Company shares",
+            "[Total Number of options]",
+            "[Vested options] options are vested",
+            "[Non Vested options] options have not yet reached their vesting date"
+        ]
     else:
         holding_date_heb = format_holding_date_hebrew(holding_date_raw)
 
@@ -174,15 +232,20 @@ def generate():
             "Kanabo Group PLC": company_name,
             "נכון למועד מכתב זה": f"נכון למועד {holding_date_heb}" if holding_date_raw else "נכון למועד מכתב זה",
 
-            # These are the ones that should be bolded, capturing variations of spacing in templates
+            # Bold Keys Replacements
+            # Note: We include variations with multiple spaces that appear in the raw text
             "[מספר המניות] מניות [רגילות]": f"{number_of_shares} מניות רגילות",
             "[מספר המניות] מניות רגילות": f"{number_of_shares} מניות רגילות",
             "[כמות מניות] מניות רגילות": f"{number_of_shares} מניות רגילות",
-            "[סך הכול אופציות] אופציות": f"{total_options} אופציות",
-            "[אופציות מובשלות] אופציות בשלות": f"{vested_options} אופציות בשלות",
+
+            "[סך הכול אופציות]  מתוכן": f"{total_options} אופציות מתוכן",
+            "[סך הכול אופציות] מתוכן": f"{total_options} אופציות מתוכן",
+
             "[אופציות מובשלות]  אופציות בשלות": f"{vested_options} אופציות בשלות",
-            "[אופציות לא מובשלות] אופציות שטרם הגיע מועד הבשלתן": f"{unvested_options} אופציות שטרם הגיע מועד הבשלתן",
+            "[אופציות מובשלות] אופציות בשלות": f"{vested_options} אופציות בשלות",
+
             "[אופציות לא מובשלות]  אופציות שטרם הגיע מועד הבשלתן": f"{unvested_options} אופציות שטרם הגיע מועד הבשלתן",
+            "[אופציות לא מובשלות] אופציות שטרם הגיע מועד הבשלתן": f"{unvested_options} אופציות שטרם הגיע מועד הבשלתן",
         }
 
         # Fallbacks
@@ -197,9 +260,13 @@ def generate():
             "[מספר המניות] מניות [רגילות]",
             "[מספר המניות] מניות רגילות",
             "[כמות מניות] מניות רגילות",
-            "[סך הכול אופציות] אופציות",
+
+            "[סך הכול אופציות]  מתוכן",
+            "[סך הכול אופציות] מתוכן",
+
             "[אופציות מובשלות] אופציות בשלות",
             "[אופציות מובשלות]  אופציות בשלות",
+
             "[אופציות לא מובשלות] אופציות שטרם הגיע מועד הבשלתן",
             "[אופציות לא מובשלות]  אופציות שטרם הגיע מועד הבשלתן"
         ]
@@ -221,6 +288,9 @@ def generate():
         for row in table.rows:
             for cell in row.cells:
                 advanced_replace(cell.paragraphs, replacements, bold_keys)
+
+    signature_path = os.path.join(base_dir, "static", "signature.png")
+    insert_signature(doc, signature_path)
 
     output_docx = f"/tmp/{template_type}_{language}.docx"
     doc.save(output_docx)
