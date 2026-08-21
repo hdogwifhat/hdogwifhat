@@ -65,6 +65,9 @@ def index():
     return render_template("index.html")
 
 def advanced_replace(paragraphs, replacements, bold_keys):
+    # Sort replacements by length descending so longer phrases match first
+    sorted_reps = sorted(replacements.items(), key=lambda x: len(x[0]), reverse=True)
+
     for p in paragraphs:
         needs_replace = False
         for key in replacements.keys():
@@ -73,12 +76,10 @@ def advanced_replace(paragraphs, replacements, bold_keys):
                 break
 
         if needs_replace:
-            # We want to keep the original alignment if possible.
             alignment = p.alignment
-            style = p.style
 
             text = p.text
-            for k, v in replacements.items():
+            for k, v in sorted_reps:
                 if k not in bold_keys:
                     text = text.replace(k, str(v))
 
@@ -86,23 +87,29 @@ def advanced_replace(paragraphs, replacements, bold_keys):
                 p.clear()
 
                 def rebuild_p(current_text, current_p):
+                    first_key = None
+                    first_idx = len(current_text)
                     for k in bold_keys:
-                        if k in current_text:
-                            parts = current_text.split(k, 1)
-                            if parts[0]:
-                                current_p.add_run(parts[0])
-                            run = current_p.add_run(str(replacements[k]))
-                            run.bold = True
-                            rebuild_p(parts[1], current_p)
-                            return
-                    if current_text:
-                        current_p.add_run(current_text)
+                        idx = current_text.find(k)
+                        if idx != -1 and idx < first_idx:
+                            first_key = k
+                            first_idx = idx
+
+                    if first_key:
+                        parts = current_text.split(first_key, 1)
+                        if parts[0]:
+                            current_p.add_run(parts[0])
+                        run = current_p.add_run(str(replacements[first_key]))
+                        run.bold = True
+                        rebuild_p(parts[1], current_p)
+                    else:
+                        if current_text:
+                            current_p.add_run(current_text)
 
                 rebuild_p(text, p)
             else:
                 p.text = text
 
-            # restore alignment if possible
             if alignment is not None:
                 p.alignment = alignment
 
@@ -147,9 +154,6 @@ def generate():
     else:
         holding_date_heb = format_holding_date_hebrew(holding_date_raw)
 
-        # We need to replace the entire phrase to bold it as requested
-        # For example: "[מספר המניות] מניות [רגילות]" -> "105 מניות רגילות" (bold)
-
         replacements = {
             "[שם החברה]": company_name,
             "[שם הניצע\\ת]": shareholder_name,
@@ -170,16 +174,18 @@ def generate():
             "Kanabo Group PLC": company_name,
             "נכון למועד מכתב זה": f"נכון למועד {holding_date_heb}" if holding_date_raw else "נכון למועד מכתב זה",
 
-            # These are the ones that should be bolded
+            # These are the ones that should be bolded, capturing variations of spacing in templates
             "[מספר המניות] מניות [רגילות]": f"{number_of_shares} מניות רגילות",
             "[מספר המניות] מניות רגילות": f"{number_of_shares} מניות רגילות",
             "[כמות מניות] מניות רגילות": f"{number_of_shares} מניות רגילות",
             "[סך הכול אופציות] אופציות": f"{total_options} אופציות",
             "[אופציות מובשלות] אופציות בשלות": f"{vested_options} אופציות בשלות",
-            "[אופציות לא מובשלות] אופציות שטרם הגיע מועד הבשלתן": f"{unvested_options} אופציות שטרם הגיע מועד הבשלתן"
+            "[אופציות מובשלות]  אופציות בשלות": f"{vested_options} אופציות בשלות",
+            "[אופציות לא מובשלות] אופציות שטרם הגיע מועד הבשלתן": f"{unvested_options} אופציות שטרם הגיע מועד הבשלתן",
+            "[אופציות לא מובשלות]  אופציות שטרם הגיע מועד הבשלתן": f"{unvested_options} אופציות שטרם הגיע מועד הבשלתן",
         }
 
-        # Fallbacks if the specific phrasing isn't exactly matching
+        # Fallbacks
         replacements["[מספר המניות]"] = number_of_shares
         replacements["[כמות מניות]"] = number_of_shares
         replacements["[סך הכול אופציות]"] = total_options
@@ -193,7 +199,9 @@ def generate():
             "[כמות מניות] מניות רגילות",
             "[סך הכול אופציות] אופציות",
             "[אופציות מובשלות] אופציות בשלות",
-            "[אופציות לא מובשלות] אופציות שטרם הגיע מועד הבשלתן"
+            "[אופציות מובשלות]  אופציות בשלות",
+            "[אופציות לא מובשלות] אופציות שטרם הגיע מועד הבשלתן",
+            "[אופציות לא מובשלות]  אופציות שטרם הגיע מועד הבשלתן"
         ]
 
     template_file = TEMPLATES.get(template_type, {}).get(language)

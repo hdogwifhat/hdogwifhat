@@ -1,0 +1,9 @@
+[2026-08-21 14:55:11 +0000] [151620] [INFO] Starting gunicorn 21.2.0
+[2026-08-21 14:55:11 +0000] [151620] [INFO] Listening at: http://0.0.0.0:5000 (151620)
+[2026-08-21 14:55:11 +0000] [151620] [INFO] Using worker: sync
+[2026-08-21 14:55:11 +0000] [151738] [INFO] Booting worker with pid: 151738
+convert /tmp/102_options_shares_he.docx as a Writer document -> /tmp/102_options_shares_he.pdf using filter : writer_pdf_Export
+Overwriting: /tmp/102_options_shares_he.pdf
+[2026-08-21 14:55:19 +0000] [151620] [INFO] Handling signal: term
+[2026-08-21 14:55:19 +0000] [151738] [INFO] Worker exiting (pid: 151738)
+[2026-08-21 14:55:20 +0000] [151620] [INFO] Shutting down: Master
