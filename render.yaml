@@ -1,0 +1,5 @@
+services:
+  - type: web
+    name: holdings-approval-generator
+    env: docker
+    dockerfilePath: ./Dockerfile
